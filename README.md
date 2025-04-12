@@ -4,7 +4,9 @@ It has a GUI I`ve added multithreading and made a functioning automarklost featu
 Anyone is free to use/modify/share my code. Enjoy!
 
 
-How to install :
+How to install
+```
 git clone 
 python -m pip install -r reqs.txt
 python MSMC_Revamped.pyw
+```
