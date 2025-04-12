@@ -5,7 +5,7 @@ It has a GUI I`ve added more efficient checking and made a functioning automarkl
 Anyone is free to use/modify/share my code. Enjoy!
 
 
-How to install
+**How to install**
 ```
 git clone https://github.com/klyte-dev/MSMCRevamped
 cd MSMCRevamped
