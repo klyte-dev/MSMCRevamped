@@ -18,3 +18,5 @@ heres a pic of how the gui looks like :
 https://cdn.discordapp.com/attachments/1358918220874121216/1360717684895125614/image.png?ex=67fc2298&is=67fad118&hm=c41028f242f75e242bf93f0b521a2e5cd27d853e9978196dba7972382d289f45&
 
 Results are saved in the results tab and also in a folder check-{date}.
+
+You can contact me on klytegithub@gmail.com or on discord : ```_klyte_```
