@@ -1,7 +1,7 @@
 # MSMCRevamped
 ****CURRENTLY STABLE****
 
-MSMC Revamped is a improved version of MSMC (credit original creator : MachineKillin check him out on github)
+MSMC Revamped is a improved version of MSMC (original creator : MachineKillin check him out on github)
 It has a GUI I`ve added more efficient checking and made a functioning automarklost feature. Ive also improved some other things but thats the main part
 
 Anyone is free to use/modify/share my code. Enjoy!
