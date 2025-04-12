@@ -6,7 +6,8 @@ Anyone is free to use/modify/share my code. Enjoy!
 
 How to install
 ```
-git clone 
+git clone https://github.com/klyte-dev/MSMCRevamped
+cd MSMCRevamped
 python -m pip install -r reqs.txt
 python MSMC_Revamped.pyw
 ```
