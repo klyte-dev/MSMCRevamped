@@ -1,7 +1,9 @@
 # MSMCRevamped
 ****CURRENTLY STABLE****
 
-*Counts valid mail as hits*
+but not fast ;)
+
+*Automarklost does not work flawlessly - not me*
 
 MSMC Revamped is a improved version of MSMC (original creator : MachineKillin check him out on github)
 It has a GUI I`ve added more efficient checking and made a functioning automarklost feature. Ive also improved some other things but thats the main part
