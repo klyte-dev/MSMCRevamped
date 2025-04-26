@@ -22,3 +22,5 @@ https://cdn.discordapp.com/attachments/1358918220874121216/1360717684895125614/i
 Results are saved in the results tab and also in a folder check-{date}.
 
 You can contact me on klytegithub@gmail.com or on discord : ```_klyte_```
+
+also join my discord server dedicated to this project : https://discord.gg/b27fmEEHE4
