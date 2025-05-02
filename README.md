@@ -17,7 +17,7 @@ python -m pip install -r reqs.txt
 python MSMC_Revamped.pyw
 ```
 heres a pic of how the gui looks like :
-https://cdn.discordapp.com/attachments/1358918220874121216/1360717684895125614/image.png?ex=67fc2298&is=67fad118&hm=c41028f242f75e242bf93f0b521a2e5cd27d853e9978196dba7972382d289f45&
+https://cdn.discordapp.com/attachments/1365641100836081704/1367826273526612072/LhNls1E.png?ex=6815fefc&is=6814ad7c&hm=b74c814c51ca5888ac474f415dfcdc23268ed4567e213bfb9b6d3a670d072a00&
 
 Results are saved in the results tab and also in a folder check-{date}.
 
